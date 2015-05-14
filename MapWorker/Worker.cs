@@ -100,14 +100,6 @@ namespace MapWorker
         #region Getters
         public static string getUrl() { return "tcp://" + ip + ":" + port + "/W"; }
 
-        public void SetOnHoldJobs(Queue<KeyValuePair<int, int>> _onHoldJobs) {
-            if (currJTStatus != JTStatus.ISJT)
-            {
-                onHoldJobs = _onHoldJobs;
-                hasAssignedJobs = true;
-            }
-        }
-
         private static IWorker getRemoteWorker(string objUrl)
         {
             if (mapProxies.ContainsKey(objUrl))
@@ -126,7 +118,7 @@ namespace MapWorker
             bool isCallerJT = true;
             if (term < currentTerm)
             {
-                Console.WriteLine("Node that is not JT (" + callerUrl + ") tried to invoke me");
+                Console.WriteLine("[Invalid Call] Node that is not JT (" + callerUrl + ") tried to invoke me");
                 isCallerJT = false;
                 try
                 {
@@ -137,7 +129,7 @@ namespace MapWorker
                 }
                 catch (Exception)
                 {
-                    //Console.WriteLine(e.StackTrace);
+                    Console.WriteLine("[Unavailable Worker] Couldn't talk with " + callerUrl);
                 }
             }
             currentTerm = Math.Max(currentTerm, term);
@@ -153,8 +145,7 @@ namespace MapWorker
             }
             catch (Exception)
             {
-                Console.WriteLine("Couldnt connect to worker net");
-                //Console.WriteLine(e.StackTrace);
+                Console.WriteLine("[Unavailable Worker] Couldn't talk with " + entrypointURL);
                 return;
             }
             bool succeded = true;
@@ -169,7 +160,7 @@ namespace MapWorker
                 }
                 catch (Exception)
                 {
-                    //Console.WriteLine(e.StackTrace);
+                    Console.WriteLine("[Broadcast] Couldn't broadcast to some workers, trying again");
                     succeded = false;
                 }
             } while (!succeded);
@@ -182,7 +173,7 @@ namespace MapWorker
             foreach(string url in workersURL){
                 if (url.Equals(wUrl))
                 {
-                    Console.WriteLine("Partner of " + wUrl + " is " + workersURL.ElementAt((i + 1) % workersURL.Count));
+                    Console.WriteLine("[Partner Info] Partner of " + wUrl + " is " + workersURL.ElementAt((i + 1) % workersURL.Count));
                     return workersURL.ElementAt((i + 1) % workersURL.Count);
                 }
                 i++;
@@ -195,13 +186,12 @@ namespace MapWorker
             IWorker workerProxy;
             foreach (string url in workersURL)
             {
-                Console.WriteLine("Broadcasted To " + url);
+                Console.WriteLine("[Broadcast] Broadcasted To " + url);
                 try{
                     workerProxy = getRemoteWorker(url);
                     workerProxy.addWorkerURL(getUrl());
                 }catch (Exception){
-                    //Console.WriteLine(e.StackTrace);
-                    Console.WriteLine("error at broadcast");
+                    Console.WriteLine("[Broadcast] Couldn't broadcast to " + url);
                 }
             }
         }
@@ -210,7 +200,7 @@ namespace MapWorker
         #region WorkersNet Methods
         private void reset()
         {
-            Console.WriteLine("Reseting machine state");
+            Console.WriteLine("[Reset] Reseting machine state");
             inputSize = 0;
             numSlices = 0;
             indexesCompleted = 0;
@@ -268,6 +258,15 @@ namespace MapWorker
         #endregion
 
         #region Job Services
+        public void SetOnHoldJobs(Queue<KeyValuePair<int, int>> _onHoldJobs)
+        {
+            if (currJTStatus != JTStatus.ISJT)
+            {
+                onHoldJobs = _onHoldJobs;
+                hasAssignedJobs = true;
+            }
+        }
+
         public void SubmitJob(int _numOfSlices, int _inputSize, string _clientUrl)
         {
             if (!communicable) Monitor.Wait(monitorObject);
@@ -275,11 +274,11 @@ namespace MapWorker
             try
             {
                 stopWatch.Start();
-                Console.WriteLine("Received Submitjob");
+                Console.WriteLine("[Client Interaction] Received Submitjob");
                 IClient clientProxy = (IClient)Activator.GetObject(typeof(IClient), _clientUrl);
                 if (clientProxy == null)
                 {
-                    throw new Exception("Failed to conenct to Client");
+                    throw new Exception("[Unavailable Client] Failed to conenct to Client");
                 }
                 else if (workersURL.Count == 0)
                 {
@@ -295,7 +294,7 @@ namespace MapWorker
                     do
                     {
                         position = rng.Next(0, workersURL.Count);
-                        Console.WriteLine("Choosing worker " + position + " to be JT");
+                        Console.WriteLine("[JT Decision] Choosing worker " + position + " to be JT");
                         try
                         {
                             jobTracker = getRemoteWorker(workersURL.ElementAt(position));
@@ -303,9 +302,8 @@ namespace MapWorker
                         }
                         catch (Exception)
                         {
-                            //Console.WriteLine(e.StackTrace);
+                            Console.WriteLine("[Unavailable Worker] Couldn't talk with " + workersURL.ElementAt(position));
                             failedWorkers.Add(workersURL.ElementAt(position));
-                            //workersURL.RemoveAt(position);
                             ping = false;
                         }
                     } while (!ping);
@@ -313,7 +311,7 @@ namespace MapWorker
             }
             catch (Exception)
             {
-                //Console.WriteLine(exc.StackTrace);
+                Console.WriteLine("[Client Interaction] Job submission failed");
             }
         }
 
@@ -330,6 +328,7 @@ namespace MapWorker
             else if(percentage == 0)
                 progresses.Add(url, new ProgressReport(elapsed, elapsed, percentage, backerUrl));
         }
+
         // Return the number of completed cicles of the worker being done
         public int TrackJob()
         {
@@ -337,26 +336,27 @@ namespace MapWorker
                 Monitor.Wait(monitorJTObject);
             }
             if (!communicable) Monitor.Wait(monitorObject);
+            Console.WriteLine("\r\n--------------STATUS REPORT--------------");
             int percentage = 0;
             if (currJTStatus != JTStatus.ISJT && !jtUrl.Equals(""))
             {
                 percentage = (int)Math.Round((float)indexesCompleted / (float)indexesToComplete * 100);
-                Console.WriteLine("Completed : " + percentage + "%");
-                Console.WriteLine("Job tracker is at " + jtUrl);
+                Console.WriteLine("-> Work progress: " + percentage + "%");
+                Console.WriteLine("-> Job tracker is at " + jtUrl);
             }
             if (currJTStatus == JTStatus.ISJT)
             {
-                Console.WriteLine("Present nodes:");
+                Console.WriteLine("-> Present nodes:");
                 foreach (string workerUrl in workersURL)
                 {
-                    Console.WriteLine(workerUrl);
+                    Console.WriteLine("-->" + workerUrl);
                 }
-                Console.WriteLine("Failed nodes:");
+                Console.WriteLine("-> Failed nodes:");
                 foreach (string workerUrl in failedWorkers) {
-                    Console.WriteLine(workerUrl);
+                    Console.WriteLine("-->" + workerUrl);
                 }
             }
-            
+            Console.WriteLine("--------------||--------------\r\n");
             return percentage;
         }
 
@@ -368,7 +368,7 @@ namespace MapWorker
 
         public void CancelJob(string callerUrl, int term)
         {
-            Console.WriteLine("Canceling job");
+            Console.WriteLine("[Job] Canceling job");
             if (!communicable) Monitor.Wait(monitorObject);
             if (!CheckTerm(callerUrl, term)) return;
         }
@@ -405,8 +405,7 @@ namespace MapWorker
                 }
                 catch (Exception)
                 {
-                    Console.WriteLine("" + backingUrl + "is dead, trying to replace him");
-                    //Console.WriteLine(e.StackTrace);
+                    Console.WriteLine("[Job Substitution] " + backingUrl + "is dead, trying to replace him");
                     job = backingJob;
                     backingWorkerIsAlive = false;
                     subWork = true;
@@ -447,17 +446,17 @@ namespace MapWorker
             bool notified66 = false;
             if (subHalfOutput != null && subWork)
             {
-                Console.WriteLine("USING STUFF FROM SUB");
+                Console.WriteLine("[Job Substitution] Computing backing job");
                 currSplitBegin += backingIndexes;
             }
             currentJob = job; 
-            Console.WriteLine("Computing job...");
+            Console.WriteLine("[Job] Computing job");
             indexesCompleted = 0;
             if (subHalfOutput != null && subWork)
                 indexesCompleted += splitEnd - currSplitBegin;
             indexesToComplete = Math.Max(1, splitEnd - currSplitBegin);
 
-            Console.WriteLine("Asking from split " + splitBegin + " to index " + splitEnd + " from client " + clientUrl);
+            Console.WriteLine("[Client Interaction] Asking from split " + splitBegin + " to index " + splitEnd + " from client " + clientUrl);
             IClient clientProxy = (IClient)Activator.GetObject(typeof(IClient), clientUrl);
             IList<string> inputSplit = clientProxy.getSplit(currSplitBegin, splitEnd);
             if (dll == null)
@@ -470,7 +469,7 @@ namespace MapWorker
                 }
                 catch (Exception)
                 {
-                    //Console.WriteLine(e.StackTrace);
+                    Console.WriteLine("[DLL] Loading unsuccessful");
                 }
             }
             
@@ -525,21 +524,22 @@ namespace MapWorker
                     {
                         try
                         {
-                            Console.WriteLine("HalfWay, going to send job to partner at" + backerUrl);
+                            Console.WriteLine("[Job] Halfway, going to send backup to partner at" + backerUrl);
                             IWorker subWorker = getRemoteWorker(backerUrl);
                             subWorker.setSubJobs((List<KeyValuePair<string, string>>)outputSplit, getUrl(), splitBegin, splitEnd, indexesCompleted);
                             notYetSent = false;
-                            Console.WriteLine("HalfWay, sent job to partner" + backerUrl);
                         }
                         catch (Exception)
                         {
+                            Console.WriteLine("[Job] Couldn't backup");
                         }
+                        Console.WriteLine("[Job] Backed up successfully" + backerUrl);
                     }
                 }
             }
             RemoteCliAsyncDelegate RemoteDel = new RemoteCliAsyncDelegate(clientProxy.outputSplit);
             RemoteDel.BeginInvoke(outputSplit, splitBegin, splitEnd, jtUrl, null, null);
-            Console.WriteLine("Output sent to client "+splitBegin+" ; "+splitEnd);
+            Console.WriteLine("[Client Interaction] Output sent to client " + splitBegin + " ; " + splitEnd);
             currentJob = new JobMap("", -1, -1);
             outputSplit.Clear();
             if (subWork)
@@ -551,7 +551,6 @@ namespace MapWorker
             }
             available = true;
             computing = false;
-            //cancelJob = false;
             notYetSent = true;
         }
 
@@ -575,7 +574,7 @@ namespace MapWorker
             if (currJTStatus != JTStatus.ISJT)
             {
 				currJTStatus = JTStatus.ISJTSUB;
-                Console.WriteLine("Choosen as JT substitute");
+                Console.WriteLine("[JT Sub] Choosen as JT substitute");
                 clientUrl = _clientUrl;
                 inputSize = _inputSize;
                 numSlices = _numOfSlices;
@@ -608,7 +607,7 @@ namespace MapWorker
                     del.BeginInvoke(getUrl(), myTerm, null, null);
                 }
                 catch (Exception) {
-                    //Console.WriteLine(e.StackTrace);
+                    Console.WriteLine("[Unavailable Worker] Couldn't talk with " + workerUrl);
                 }
             }
             if (workersURL.Count > 0)
@@ -618,7 +617,7 @@ namespace MapWorker
                 {
                     ping = true;
                     position = rng.Next(0, workersURL.Count);
-                    Console.WriteLine("Choosing worker " + position + " to be JT substitute");
+                    Console.WriteLine("[JT Sub Decision] Choosing worker " + position + " to be JT substitute");
                     try
                     {
                         jobTrackerSubstitute = getRemoteWorker(workersURL.ElementAt(position));
@@ -627,10 +626,8 @@ namespace MapWorker
                     }
                     catch (Exception)
                     {
-                        //Console.WriteLine(e.StackTrace);
-                        Console.WriteLine("Couldnt find worker " + workersURL.ElementAt(position));
+                        Console.WriteLine("[Unavailable Worker] Couldn't talk with " + workersURL.ElementAt(position));
                         failedWorkers.Add(workersURL.ElementAt(position));
-                        //workersURL.RemoveAt(position);
                         ping = false;
                     }
                 } while (!ping && workersURL.Count > 0);
@@ -657,7 +654,6 @@ namespace MapWorker
         {
             if (currJTStatus == JTStatus.ISJT && !JTcommunicable) Monitor.Wait(monitorJTObject);
             if (!communicable) Monitor.Wait(monitorObject);
-            //if(!CheckTerm(callerUrl, term)) return true;
             return true;
         }
 
@@ -666,7 +662,7 @@ namespace MapWorker
             if (currJTStatus == JTStatus.ISJT && !JTcommunicable) Monitor.Wait(monitorJTObject);
             if (!communicable) Monitor.Wait(monitorObject);
             stopWatch.Stop();
-            Console.WriteLine("Job done in " + (stopWatch.ElapsedMilliseconds / 1000) + " secs");
+            Console.WriteLine("[Job] Job done in " + (stopWatch.ElapsedMilliseconds / 1000) + " secs");
         }
 
         public bool isAvailable(){
@@ -684,14 +680,14 @@ namespace MapWorker
 
         public void FreezeW()
         {
-            Console.WriteLine("Freezing worker");
+            Console.WriteLine("[Failures] Freezing worker");
             communicable = false;
             isSlowed = true;
         }
 
         public void UnfreezeW()
         {
-            Console.WriteLine("Unfreezing worker");
+            Console.WriteLine("[Failures] Unfreezing worker");
             communicable = true;
             isSlowed = false;
             try
@@ -700,19 +696,19 @@ namespace MapWorker
             }
             catch (System.Threading.SynchronizationLockException)
             {
-                //Console.WriteLine(e.Message);
+                //ignore
             }
         }
 
         public void FreezeC()
         {
-            Console.WriteLine("Freezing jt communication");
+            Console.WriteLine("[Failures] Freezing jt communication");
             JTcommunicable = false;
         }
 
         public void UnfreezeC()
         {
-            Console.WriteLine("Unfreezing jt communication");
+            Console.WriteLine("[Failures] Unfreezing jt communication");
             JTcommunicable = true;
             try
             {
@@ -720,7 +716,7 @@ namespace MapWorker
             }
             catch (System.Threading.SynchronizationLockException)
             {
-                //Console.WriteLine(e.Message);
+                // ignore
             }
         }
 
@@ -757,8 +753,16 @@ namespace MapWorker
                 {
                     foreach (string wUrl in workersURL)
                     {
-                        Console.WriteLine("Telling " + wUrl + " to reset state");
-                        getRemoteWorker(wUrl).FinishedJob();
+                        Console.WriteLine("[Reset] Telling " + wUrl + " to reset state");
+                        try
+                        {
+                            getRemoteWorker(wUrl).FinishedJob();
+                        }
+                        catch (Exception)
+                        {
+                            Console.WriteLine("[Unavailable Worker] Couldn't talk with " + wUrl);
+                            continue;
+                        }
                         while (!getRemoteWorker(wUrl).WasReseted()) ;
                     }
                     reset();
@@ -781,6 +785,7 @@ namespace MapWorker
                 }
                 if (numProgresses > 0)
                 {
+                    Console.WriteLine("\r\n------------Progress Report------------");
                     averageSpeed = sumSpeed / numProgresses;
                     //Console.WriteLine("Average speed: " + averageSpeed);
                     Console.WriteLine("List of progresses");
@@ -789,7 +794,7 @@ namespace MapWorker
                         if (progress.Value.timestamp != progress.Value.init){
                             int relativeSpeed = (int)Math.Round((100 * (float)progress.Value.percentage / (float)(progress.Value.timestamp - progress.Value.init))
                                 /averageSpeed);
-                            Console.WriteLine("Node " + progress.Key + " is at " + relativeSpeed + " speed from the average");
+                            Console.WriteLine("-> Node " + progress.Key + " is at " + relativeSpeed + " speed from the average");
                             if (relativeSpeed < 45 && progress.Value.percentage > 60)
                             {
                                 try
@@ -799,17 +804,17 @@ namespace MapWorker
                                 catch (Exception)
                                 {
                                     progresses.Remove(progress.Key);
-                                    Console.WriteLine("Node " + progress.Key + " is not available for canceling job");
+                                    Console.WriteLine("-> Node " + progress.Key + " is not available for canceling job");
                                     continue;
                                 }
                                 try
                                 {
-                                    Console.WriteLine("Forcing job substitution");
+                                    Console.WriteLine("[Slow Analysis] Forcing job substitution");
                                     getRemoteWorker(progress.Value.backerUrl).ForceJobSub(getUrl(), myTerm);
                                 }
                                 catch (Exception)
                                 {
-                                    Console.WriteLine("Backup node is not available");
+                                    Console.WriteLine("[Unavailable Worker] Backup node is not available");
                                     continue;
                                 }
                                 progresses.Remove(progress.Key);
@@ -822,29 +827,25 @@ namespace MapWorker
                                 catch (Exception)
                                 {
                                     progresses.Remove(progress.Key);
-                                    Console.WriteLine("Node " + progress.Key + " is not available for canceling job");
+                                    Console.WriteLine("-> Node " + progress.Key + " is not available for canceling job");
                                     continue;
                                 }
                                 try
                                 {
-                                    Console.WriteLine("Forcing job substitution");
+                                    Console.WriteLine("[Job Substitution] Forcing job substitution");
                                     getRemoteWorker(progress.Value.backerUrl).ForceJobSub(getUrl(), myTerm);
                                 }
                                 catch (Exception)
                                 {
-                                    Console.WriteLine("Backup node is not available");
+                                    Console.WriteLine("[Unavailable Worker] Backup node is not available");
                                     continue;
                                 }
                                 progresses.Remove(progress.Key);
                             }
                         }
                     }
+                    Console.WriteLine("------------||----------\r\n");
                 }
-                Console.WriteLine("Checking for onhold jobs");
-                if (onHoldJobs.Count == 0)
-                    Console.WriteLine("No jobs onhold");
-                else 
-                    Console.WriteLine("Detected jobs onhold");
                 IList<string> availableWorkers = new List<string>();
                 IWorker workerProxy;
                 foreach (string workerURL in workersURL)
@@ -856,7 +857,7 @@ namespace MapWorker
                     }
                     catch (Exception)
                     {
-                        //Console.WriteLine(e1.StackTrace);
+                        Console.WriteLine("[Unavailable Worker] Couldn't talk with " + workerURL);
                         failedWorkers.Add(workerURL);
                         continue;
                     }
@@ -871,7 +872,7 @@ namespace MapWorker
                             }
                             catch (Exception)
                             {
-                                //Console.WriteLine(e2.StackTrace);
+                                Console.WriteLine("[Unavailable Worker] Couldn't talk with " + workerURL);
                                 succeded = false;
                             }
                             finally
@@ -903,12 +904,12 @@ namespace MapWorker
                             RemoteGiveJobDelegate RemoteDel = new RemoteGiveJobDelegate(availableWorker.GiveJob);
                             KeyValuePair<int, int> job = onHoldJobs.Dequeue();
                             RemoteDel.BeginInvoke(job.Key, job.Value, clientUrl, getUrl(), myTerm, GetPartner(availableWorkerURL), null, null);
-                            Console.WriteLine("[JobTracker]: " + "Giving split begin " + job.Key + " ; end " + job.Value + " to worker " + availableWorkerURL);
+                            Console.WriteLine("[JobTracker] " + "Giving split begin " + job.Key + " ; end " + job.Value + " to worker " + availableWorkerURL);
                         }
                     }
                     catch (Exception)
                     {
-                        //Console.WriteLine(e3.StackTrace);
+                        Console.WriteLine("[Unavailable Worker] Couldn't talk with " + availableWorkerURL);
                         failedWorkers.Add(availableWorkerURL);
                     }
                 }
@@ -920,7 +921,7 @@ namespace MapWorker
                 }
                 catch (Exception)
                 {
-                    //Console.WriteLine(e4.StackTrace);
+                    Console.WriteLine("[JT Replication] Couldn't talk with JT subtitute " + jtSubUrl);
                 }
                 finally
                 {
@@ -931,19 +932,17 @@ namespace MapWorker
             {
                 try
                 {
-                    Console.WriteLine("Checking if JT is alive");
+                    Console.WriteLine("[JT Subtitute] Checking if JT is alive");
                     IWorker jobTracker = getRemoteWorker(jtUrl);
                     jobTracker.Ping();
                 }
                 catch (Exception)
                 {
-                    //Console.WriteLine(e5.StackTrace);
-					//currJTStatus = JTStatus.NONE;
+                    Console.WriteLine("[JT Substitute] Couldn't talk with JT " + jtUrl);
                     InitJobTracking(numSlices, inputSize, clientUrl, getUrl(), currentTerm);
                     isOnTimeEvent = false;
                     return;
                 }
-                Console.WriteLine("JT is alive check!");
             }if(currJTStatus == JTStatus.NONE || currJTStatus == JTStatus.ISJTSUB || currentJob.splitBegin !=-1){
                 if (!computing)
                     (new System.Threading.Thread(ComputeJob)).Start();
