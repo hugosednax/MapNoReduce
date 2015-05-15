@@ -49,7 +49,7 @@ namespace PADIMapInterfaces
         void NotifyNewJT(string callerUrl, int term);
         void ForceJobSub(string callerUrl, int term);
         void FinishedJob();
-        bool WasReseted();
+        //bool WasReseted();
     }
 
     public interface IClient {

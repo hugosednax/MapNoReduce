@@ -7,6 +7,8 @@ using PADIMapInterfaces;
 using System.Runtime.Remoting.Channels.Tcp;
 using System.Runtime.Remoting.Channels;
 using System.Runtime.Remoting;
+using System.Collections;
+using System.Runtime.Serialization.Formatters;
 
 namespace MapWorker
 {
@@ -23,7 +25,13 @@ namespace MapWorker
 
                 // Init the initial worker (aka known port worker)
                 int port = 30001 + workerID;
-                TcpChannel channel = new TcpChannel(port);
+                BinaryServerFormatterSinkProvider provider = new BinaryServerFormatterSinkProvider();
+                provider.TypeFilterLevel = TypeFilterLevel.Full;
+                IDictionary props = new Hashtable();
+                props["port"] = port;
+                props["timeout"] = 3000;
+                TcpChannel channel = new TcpChannel(props, null, provider);
+
                 ChannelServices.RegisterChannel(channel, false);
                 if (workerID == 0)
                 {
@@ -53,7 +61,13 @@ namespace MapWorker
                 string ip = args[1];
                 int port = Int32.Parse(args[2]);
 
-                TcpChannel channel = new TcpChannel(port);
+                BinaryServerFormatterSinkProvider provider = new BinaryServerFormatterSinkProvider();
+                provider.TypeFilterLevel = TypeFilterLevel.Full;
+                IDictionary props = new Hashtable();
+                props["port"] = port;
+                props["timeout"] = 3000;
+                TcpChannel channel = new TcpChannel(props, null, provider);
+
                 ChannelServices.RegisterChannel(channel, false);
                 Worker worker;
 
