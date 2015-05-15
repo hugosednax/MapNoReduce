@@ -27,8 +27,6 @@ namespace MapWorker
         static string backerUrl = "";
         System.Timers.Timer aTimer = new System.Timers.Timer();
         System.Timers.Timer slowTimer;
-        /*static Object monitorObject = new Object();
-        static Object monitorJTObject = new Object();*/
         System.Diagnostics.Stopwatch stopWatch = new System.Diagnostics.Stopwatch();
         static int currentTerm = 0;
         static int myTerm = 0;
@@ -714,14 +712,6 @@ namespace MapWorker
             Console.WriteLine("[Failures] Unfreezing worker");
             communicable = true;
             isSlowed = false;
-            /*try
-            {
-                Monitor.PulseAll(monitorObject);
-            }
-            catch (System.Threading.SynchronizationLockException)
-            {
-                //ignore
-            }*/
         }
 
         public void FreezeC()
@@ -734,14 +724,6 @@ namespace MapWorker
         {
             Console.WriteLine("[Failures] Unfreezing jt communication");
             JTcommunicable = true;
-            /*try
-            {
-                Monitor.PulseAll(monitorJTObject);
-            }
-            catch (System.Threading.SynchronizationLockException)
-            {
-                // ignore
-            }*/
         }
 
         public void ForceJobSub(string callerUrl, int term)
